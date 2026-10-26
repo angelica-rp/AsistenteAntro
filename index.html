@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asistente de pliegues</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1d2326;--muted:#667075;--line:#dcdad2;--accent:#0f6e5a;--accent-ink:#fff;--warn:#b4531a;--now:#e3f3ee}
+@media (prefers-color-scheme:dark){:root{--bg:#15191a;--card:#1e2426;--ink:#eceeed;--muted:#99a3a7;--line:#323a3d;--accent:#3fb596;--accent-ink:#06211a;--warn:#e29a63;--now:#1f3a33}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 2px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.row>label{flex:1;min-width:130px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+select,input[type=text]{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);width:100%}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 14px;border-radius:9px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;font-size:18px;padding:14px 18px;width:100%;margin-top:12px}
+button.voice-on{background:var(--card);color:var(--accent);border:2px solid var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.pill{display:inline-block;font-size:13px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.pill.on{color:var(--accent);border-color:var(--accent)}
+.now-site{font-size:34px;font-weight:700;margin:6px 0 2px;text-transform:capitalize}
+.muted{color:var(--muted);font-size:14px}
+.heard{font-size:18px;min-height:27px;margin-top:10px}
+.parsed{font-size:15px;color:var(--accent);min-height:22px}
+.msg{color:var(--warn);font-size:14px;margin:8px 0 0}
+.note{color:var(--muted);font-size:13px;margin:10px 0 0}
+details{margin-top:10px;font-size:14px}
+summary{cursor:pointer;color:var(--muted)}
+details .row{margin-top:8px}
+.check{flex-direction:row!important;align-items:center;gap:8px!important;color:var(--ink)!important;font-size:14px!important}
+.check input{width:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left;text-transform:capitalize}
+th{font-size:13px;color:var(--muted);font-weight:600}
+td.now{background:var(--now);border-radius:6px;font-weight:700}
+td.edit{cursor:pointer;text-decoration:underline dotted var(--muted);text-underline-offset:4px}
+td.edit:hover{background:var(--now);border-radius:6px}
+input.cell{width:72px;text-align:right;padding:4px 6px}
+form{display:flex;gap:8px;margin-top:10px}
+.hint{font-size:13px;color:var(--muted);margin:8px 0 0}
+.tools{display:flex;gap:8px;margin-top:8px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Asistente de pliegues cutáneos</h1>
+  <p class="sub">Prueba · ISAK 1 (perfil restringido) · teclado, voz o las dos</p>
+
+  <div class="card" id="unsupported" hidden>
+    <strong>Este navegador no tiene reconocimiento de voz.</strong>
+    <p class="muted" style="margin:6px 0 0">Puedes usar la página con el teclado. Para dictar, ábrela en Chrome o Edge.</p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <label>Sujeto (opcional)
+        <input type="text" id="subject" placeholder="Nombre o código" autocomplete="off">
+      </label>
+      <label>Rondas
+        <select id="rounds"><option value="2">2 medidas por sitio</option><option value="3">3 medidas por sitio</option></select>
+      </label>
+    </div>
+    <button class="primary" id="toggle">🎤 Activar voz</button>
+    <p class="note" id="voicenote"></p>
+    <p class="msg" id="msg" hidden></p>
+    <details>
+      <summary>Opciones de voz</summary>
+      <div class="row">
+        <label>Idioma de reconocimiento
+          <select id="lang">
+            <option value="es-CR">Español (Costa Rica)</option>
+            <option value="es-MX">Español (México)</option>
+            <option value="es-US">Español (EE. UU.)</option>
+            <option value="es-ES">Español (España)</option>
+          </select>
+        </label>
+        <label>Voz del navegador (respaldo)
+          <select id="voice"></select>
+        </label>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="readtyped" checked> Leer en voz alta lo que tecleo (solo con la voz encendida)</label>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <span class="pill" id="status">Solo teclado</span>
+    <div class="now-site" id="site">—</div>
+    <div class="muted" id="roundinfo"></div>
+    <form id="typedform">
+      <input type="text" id="typed" inputmode="decimal" placeholder="Valor en mm, por ejemplo 12.5" autocomplete="off">
+      <button type="submit">Anotar</button>
+    </form>
+    <div class="tools"><button type="button" id="skip">Saltar pliegue</button></div>
+    <div class="heard" id="heard"></div>
+    <div class="parsed" id="parsed"></div>
+    <p class="hint">Teclado: escribe el valor y Enter (12.5 o 12,5). Con la voz encendida también puedes dictar: “uno dos punto cinco”. Comandos de voz: <b>repetir</b> · <b>corregir</b> · <b>siguiente</b> · <b>terminar</b>.</p>
+  </div>
+
+  <div class="card">
+    <table><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+    <p class="note">Toca un valor anterior (subrayado) para corregirlo. El cursor sigue donde estaba.</p>
+    <div class="row" style="margin-top:12px">
+      <label>Decimales al exportar
+        <select id="dec"><option value="coma">Coma (12,5)</option><option value="punto">Punto (12.5)</option></select>
+      </label>
+      <button id="download">Descargar CSV</button>
+      <button id="copy">Copiar tabla</button>
+      <button id="reset">Reiniciar</button>
+    </div>
+    <p class="note">Los datos se guardan solos en este navegador. Si cierras la página, al volver los recuperas.</p>
+  </div>
+</main>
+
+<script>
+// <parser>
+const UNITS={cero:0,uno:1,un:1,una:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,dieciseis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20,veintiuno:21,veintiun:21,veintidos:22,veintitres:23,veinticuatro:24,veinticinco:25,veintiseis:26,veintisiete:27,veintiocho:28,veintinueve:29};
+const TENS={treinta:30,cuarenta:40,cincuenta:50,sesenta:60,setenta:70,ochenta:80,noventa:90};
+const DECWORDS=['punto','coma','con'];
+const HALF=['medio','media'];
+const has=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+
+function tokenize(s){
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/(\d)\s*[,.]\s*(\d)/g,'$1.$2')
+    .replace(/[^a-z0-9.\s]/g,' ')
+    .split(/\s+/).map(t=>t.replace(/^\.+|\.+$/g,'')).filter(Boolean);
+}
+function isNumTok(t){
+  return /^\d+(\.\d+)?$/.test(t)||has(UNITS,t)||has(TENS,t)||t==='y'||t==='cien'||t==='ciento'||DECWORDS.includes(t)||HALF.includes(t);
+}
+function intVal(tokens){
+  let total=0,seen=false;
+  for(const x of tokens){
+    if(x==='y')continue;
+    if(/^\d+$/.test(x))total+=parseInt(x,10);
+    else if(has(UNITS,x))total+=UNITS[x];
+    else if(has(TENS,x))total+=TENS[x];
+    else if(x==='cien'||x==='ciento')total+=100;
+    else return null;
+    seen=true;
+  }
+  return seen?total:null;
+}
+function fracDigits(x){
+  if(/^\d+$/.test(x))return x;
+  if(has(UNITS,x))return String(UNITS[x]);
+  return null;
+}
+function sd(x){
+  if(/^\d$/.test(x))return x;
+  if(has(UNITS,x)&&UNITS[x]<=9)return String(UNITS[x]);
+  return null;
+}
+function intFrom(tokens){
+  if(tokens.length>=2&&tokens.every(x=>sd(x)!==null))return parseInt(tokens.map(sd).join(''),10);
+  return intVal(tokens);
+}
+function parseNumber(tokens){
+  let t=tokens.filter(isNumTok);
+  while(t.length&&(t[0]==='y'||DECWORDS.includes(t[0])))t.shift();
+  while(t.length&&t[t.length-1]==='y')t.pop();
+  if(!t.length)return null;
+  const dd=t.findIndex(x=>/^\d+\.\d+$/.test(x));
+  if(dd>=0){
+    if(dd!==t.length-1)return null;
+    const lead=t.slice(0,dd);
+    if(!lead.length)return parseFloat(t[dd]);
+    if(!lead.every(x=>sd(x)!==null))return null;
+    const[ip,fp]=t[dd].split('.');
+    return parseFloat(lead.map(sd).join('')+ip+'.'+fp);
+  }
+  let frac=null,intT,fracT=[];
+  const hi=t.findIndex(x=>HALF.includes(x));
+  if(hi>=0){
+    frac='5';t=t.slice(0,hi);
+    if(t[t.length-1]==='y')t.pop();
+    if(!t.length)return null;
+    intT=t;
+  }else{
+    const di=t.findIndex(x=>DECWORDS.includes(x));
+    if(di>=0){intT=t.slice(0,di);fracT=t.slice(di+1);}
+    else if(t.length>=2&&t.every(x=>sd(x)!==null)){
+      if(t.length===2){intT=t;}
+      else{intT=t.slice(0,-1);fracT=t.slice(-1);}
+    }
+    else{
+      if(t.length>=2&&sd(t[0])!==null&&sd(t[1])!==null)return null;
+      let n=1;
+      if(has(TENS,t[0])&&t[1]==='y'&&has(UNITS,t[2])&&UNITS[t[2]]>=1&&UNITS[t[2]]<=9)n=3;
+      intT=t.slice(0,n);fracT=t.slice(n);
+    }
+  }
+  const iv=intFrom(intT);
+  if(iv===null)return null;
+  if(frac===null){
+    frac='';
+    for(const x of fracT){
+      if(x==='y')continue;
+      const d=fracDigits(x);
+      if(d===null)return null;
+      frac+=d;
+    }
+  }
+  if(frac.length>2)return null;
+  return parseFloat(iv+(frac?'.'+frac:''));
+}
+// Teclado: solo números (12, 12.5, 12,5). Más estricto que la voz: "125" no se adivina.
+function parseTyped(s){
+  const m=String(s).trim().match(/^(\d{1,2})(?:[.,](\d{1,2}))?$/);
+  if(!m)return null;
+  return parseFloat(m[1]+(m[2]?'.'+m[2]:''));
+}
+function interpret(text){
+  const t=tokenize(text);
+  const j=' '+t.join(' ')+' ';
+  if(/ (repetir|repite|repita|otra vez) /.test(j))return{cmd:'repeat'};
+  if(/ (corregir|corrige|corrijo|correccion|borrar|borra|atras) /.test(j))return{cmd:'correct'};
+  if(/ (siguiente|saltar|salta|omitir) /.test(j))return{cmd:'skip'};
+  if(/ (terminar|termina|detener|detente|parar) /.test(j))return{cmd:'stop'};
+  let v=parseNumber(t);
+  if(v===null)return null;
+  let note=null;
+  if(Number.isInteger(v)&&v>=100&&v<=800){note=v+' leído como '+(v/10).toString().replace('.',',');v=v/10;}
+  return{value:v,note};
+}
+// </parser>
+
+// <clips>
+// Lista de audios. Cada clave es un archivo audio/<clave>.mp3; el texto es lo que se graba
+// (y lo que lee la voz del navegador si faltan los clips). generar-clips.js lee este bloque.
+const SITES=['tríceps','subescapular','bíceps','cresta ilíaca','supraespinal','abdominal','muslo anterior','pantorrilla medial'];
+const DIGIT_WORDS=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
+const PHRASES={
+  listo:'Listo.',empezamos:'Empezamos con',siguiente:'Siguiente',ronda:'Ronda',registrado:'registrado',
+  completa:'Medición completa.',fuera:'está fuera de rango.',repite:'Repite',no_entendi:'No entendí.',
+  corregido:'Corregido.',saltado:'Saltado.',ultimo:'Último valor',toca:'Toca',
+  nada_corregir:'No hay nada que corregir.',sin_valores:'Todavía no hay valores.',
+  ya_completa:'La medición ya está completa.',detenido:'Detenido.'
+};
+const CLIPS={};
+DIGIT_WORDS.forEach((w,i)=>{CLIPS['d'+i]=w;});
+CLIPS.punto='punto';
+SITES.forEach((s,i)=>{CLIPS['s'+i]=s;});
+Object.assign(CLIPS,PHRASES);
+// </clips>
+
+const N=SITES.length;
+const STORE='pliegues:v1';
+const PAUSE_MS=260;
+const $=id=>document.getElementById(id);
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rounds=2,data,pos,done,lastValue,startedAt=null,dec='coma';
+// La voz arranca apagada: no escucha, no habla y no pide permiso de micrófono hasta que se enciende.
+let voiceOn=false,speaking=false,typingPause=false,introPending=false,editing=false;
+let voice=null,rec=null,voices=[];
+const total=()=>rounds*N;
+const cur=()=>({round:Math.floor(pos/N),site:pos%N});
+const fmt=v=>String(v).replace('.',',');
+const hasData=()=>data.some(r=>r.some(v=>v!==null));
+// ¿Se habla? Solo con la voz encendida; lo tecleado se lee solo si la casilla está marcada.
+const canTalk=src=>voiceOn&&(src!=='typed'||$('readtyped').checked);
+
+// Mensajes = listas de claves de audio. '|' es una pausa corta.
+// Lectura estilo ISAK: dígito por dígito, cero inicial bajo 10, siempre un decimal.
+const numKeys=v=>{
+  const[ip,fp='0']=String(v).split('.');
+  const whole=ip.length<2?'0'+ip:ip;
+  return[...[...whole].map(d=>'d'+d),'punto',...[...fp].map(d=>'d'+d)];
+};
+const siteKey=i=>'s'+i;
+const roundKeys=n=>['ronda','d'+n];
+const introKeys=()=>done?['listo']:['listo',hasData()?'toca':'empezamos',siteKey(cur().site)];
+
+// ---- estado y guardado
+function resetAll(){
+  data=Array.from({length:rounds},()=>Array(N).fill(null));
+  pos=0;done=false;lastValue=null;startedAt=null;
+  $('heard').textContent='';$('parsed').textContent='';
+  render();
+}
+function save(){
+  try{localStorage.setItem(STORE,JSON.stringify({rounds,data,pos,done,lastValue,startedAt,dec,subject:$('subject').value,readTyped:$('readtyped').checked}));}catch(e){}
+}
+function loadSaved(){
+  try{
+    const s=JSON.parse(localStorage.getItem(STORE)||'null');
+    if(!s||![2,3].includes(s.rounds)||!Array.isArray(s.data)||s.data.length!==s.rounds)return false;
+    if(!s.data.every(r=>Array.isArray(r)&&r.length===N&&r.every(v=>v===null||(typeof v==='number'&&isFinite(v)))))return false;
+    if(!Number.isInteger(s.pos)||s.pos<0||s.pos>s.rounds*N)return false;
+    rounds=s.rounds;data=s.data;pos=s.pos;done=!!s.done;
+    lastValue=typeof s.lastValue==='number'?s.lastValue:null;
+    startedAt=typeof s.startedAt==='string'?s.startedAt:null;
+    $('subject').value=typeof s.subject==='string'?s.subject:'';
+    $('readtyped').checked=s.readTyped!==false;
+    if(s.dec==='punto'||s.dec==='coma')dec=s.dec;
+    $('dec').value=dec;
+    $('rounds').value=String(rounds);
+    return true;
+  }catch(e){return false;}
+}
+function confirmWipe(){
+  return !hasData()||confirm('Esto borra la medición actual. ¿Ya descargaste el CSV?');
+}
+
+function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
+function render(){
+  const{round,site}=cur();
+  $('site').textContent=done?'Completo ✓':SITES[site];
+  $('roundinfo').textContent=done?'Medición terminada':`Ronda ${round+1} de ${rounds} · pliegue ${site+1} de ${N}`;
+  $('skip').disabled=done;
+  const th=$('thead');th.innerHTML='';
+  const hr=el('tr');hr.append(el('th','Pliegue'));
+  for(let r=0;r<rounds;r++)hr.append(el('th','Medida '+(r+1)));
+  th.append(hr);
+  const tb=$('tbody');tb.innerHTML='';
+  SITES.forEach((s,i)=>{
+    const tr=el('tr');tr.append(el('td',s));
+    for(let r=0;r<rounds;r++){
+      const idx=r*N+i;
+      const v=data[r][i];
+      const isNow=!done&&idx===pos;
+      const td=el('td',v===null?'—':fmt(v),(isNow?'now':'')+(idx<pos?' edit':''));
+      if(idx<pos)td.onclick=()=>startCellEdit(td,r,i);
+      else if(isNow)td.onclick=()=>$('typed').focus();
+      tr.append(td);
+    }
+    tb.append(tr);
+  });
+  save();
+}
+function msg(t){const m=$('msg');m.textContent=t||'';m.hidden=!t;}
+function setUi(){
+  const b=$('toggle');
+  b.textContent=voiceOn?'🎤 Voz encendida · tocar para apagar':'🎤 Activar voz';
+  b.className='primary'+(voiceOn?' voice-on':'');
+  const s=$('status');
+  s.className='pill'+(voiceOn?' on':'');
+  s.textContent=!voiceOn?'Solo teclado':(speaking?'Hablando…':(typingPause?'Voz en pausa (tecleando)':'Escuchando…'));
+}
+
+// ---- voz: salida (clips grabados, con la voz del navegador de respaldo)
+const clipAudio={};
+let clipsReady=false,curAudio=null,sayToken=0;
+function setVoiceNote(){
+  $('voicenote').textContent=clipsReady
+    ?'Voz: clips grabados (carpeta audio/).'
+    :'Voz: la del navegador. Para usar clips grabados, deja la carpeta audio/ junto a este archivo.';
+}
+function preloadClips(){
+  const keys=Object.keys(CLIPS);
+  let ok=0,bad=0;
+  const check=()=>{
+    if(ok+bad<keys.length)return;
+    clipsReady=bad===0;
+    setVoiceNote();
+  };
+  keys.forEach(k=>{
+    const a=new Audio();
+    let counted=false;
+    a.addEventListener('canplaythrough',()=>{if(!counted){counted=true;ok++;check();}});
+    a.addEventListener('error',()=>{if(!counted){counted=true;bad++;check();}});
+    a.preload='auto';
+    a.src='audio/'+k+'.mp3';
+    clipAudio[k]=a;
+  });
+}
+function fallbackText(keys){
+  let out='';
+  for(const k of keys){
+    if(k==='|'){out=out.trim()+'. ';continue;}
+    out+=CLIPS[k]+' ';
+  }
+  return out.trim();
+}
+function cancelSpeech(){
+  sayToken++;
+  if(curAudio){curAudio.onended=null;curAudio.onerror=null;try{curAudio.pause();}catch(e){}curAudio=null;}
+  if(window.speechSynthesis)speechSynthesis.cancel();
+}
+function playSeq(keys,token,fin){
+  let i=0;
+  const next=()=>{
+    if(token!==sayToken)return;
+    if(i>=keys.length){curAudio=null;fin();return;}
+    const k=keys[i++];
+    if(k==='|'){setTimeout(next,PAUSE_MS);return;}
+    const a=clipAudio[k];
+    curAudio=a;
+    try{a.currentTime=0;}catch(e){}
+    a.onended=next;a.onerror=next;
+    const p=a.play();
+    if(p&&p.catch)p.catch(next);
+  };
+  next();
+}
+function ttsSay(keys,fin){
+  if(!window.speechSynthesis){fin();return;}
+  const u=new SpeechSynthesisUtterance(fallbackText(keys));
+  u.lang=voice?voice.lang:'es-CR';
+  if(voice)u.voice=voice;
+  u.onend=fin;u.onerror=fin;
+  speechSynthesis.speak(u);
+}
+// say() no revisa si la voz está encendida: quien la llama decide con canTalk().
+function say(keys){
+  cancelSpeech();
+  const token=sayToken;
+  speaking=true;setUi();
+  try{rec&&rec.abort();}catch(e){}
+  let finished=false;
+  const fin=()=>{if(finished||token!==sayToken)return;finished=true;speaking=false;setUi();if(voiceOn)startRec();};
+  setTimeout(fin,15000);
+  if(clipsReady&&keys.every(k=>k==='|'||clipAudio[k]))playSeq(keys,token,fin);
+  else ttsSay(keys,fin);
+}
+function loadVoices(){
+  voices=(window.speechSynthesis?speechSynthesis.getVoices():[]).filter(v=>v.lang.toLowerCase().startsWith('es'));
+  const pref=['es-cr','es-mx','es-us','es-419','es-es'];
+  const rank=v=>{const i=pref.indexOf(v.lang.toLowerCase().replace('_','-'));return i<0?99:i;};
+  voices.sort((a,b)=>rank(a)-rank(b));
+  const sel=$('voice');sel.innerHTML='';
+  if(!voices.length){sel.append(new Option('Predeterminada',''));voice=null;return;}
+  voices.forEach((v,i)=>sel.append(new Option(v.name+' ('+v.lang+')',i)));
+  voice=voices[0];
+}
+
+// ---- voz: entrada
+function startRec(){
+  if(!rec||!voiceOn||speaking||typingPause)return;
+  rec.lang=$('lang').value;
+  try{rec.start();}catch(e){}
+}
+function stopVoice(){
+  const was=voiceOn;
+  voiceOn=false;typingPause=false;introPending=false;
+  if(was){try{rec&&rec.abort();}catch(e){}}
+  cancelSpeech();speaking=false;setUi();
+}
+// El micrófono se pausa mientras tecleas (campo principal o una celda) para que no se crucen.
+function pauseForTyping(){
+  if(!voiceOn||typingPause)return;
+  typingPause=true;
+  try{rec&&rec.abort();}catch(e){}
+  setUi();
+}
+function resumeAfterTyping(){
+  if(!typingPause)return;
+  typingPause=false;setUi();
+  if(voiceOn&&!speaking)startRec();
+}
+function setupRec(){
+  rec=new SR();
+  rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=3;
+  rec.onstart=()=>{
+    setUi();
+    if(introPending){introPending=false;say(introKeys());}
+  };
+  rec.onresult=e=>{
+    if(!voiceOn)return;
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const res=e.results[i];
+      if(!res.isFinal){$('heard').textContent='…'+res[0].transcript;continue;}
+      const alts=Array.from(res).map(a=>a.transcript.trim());
+      onTranscript(alts);
+    }
+  };
+  rec.onerror=e=>{
+    if(e.error==='no-speech'||e.error==='aborted')return;
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      stopVoice();msg('El navegador no tiene permiso para usar el micrófono. Permítelo en el candado de la barra de direcciones y vuelve a encender la voz.');
+    }else if(e.error==='network'){
+      msg('El reconocimiento de voz de Chrome necesita conexión a internet.');
+    }else msg('Error de reconocimiento: '+e.error);
+  };
+  rec.onend=()=>{if(voiceOn&&!speaking&&!typingPause)setTimeout(startRec,150);};
+}
+
+// ---- lógica
+// src === 'typed' cuando el valor viene del teclado; si no, viene de la voz.
+function onTranscript(alts,src){
+  $('heard').textContent=src==='typed'?'⌨ '+alts[0]:'“'+alts[0]+'”';
+  for(const a of alts){const r=interpret(a);if(r){act(r,src);return;}}
+  $('parsed').textContent='No entendí un número';
+  if(canTalk(src))say(done?['no_entendi']:['no_entendi','repite',siteKey(cur().site)]);
+}
+function submitTyped(raw){
+  const text=String(raw).trim();
+  if(!text)return;
+  if(/^[\d\s.,]+$/.test(text)){
+    $('heard').textContent='⌨ '+text;
+    const v=parseTyped(text);
+    if(v===null){$('parsed').textContent='Valor no válido. Escribe por ejemplo 12.5';return;}
+    act({value:v},'typed');
+    return;
+  }
+  onTranscript([text],'typed');
+}
+function act(r,src){
+  const T=canTalk(src);
+  const{round,site}=cur();
+  if(r.cmd==='repeat'){
+    $('parsed').textContent='Comando: repetir';
+    if(T)say(lastValue===null?['sin_valores']:['ultimo',...numKeys(lastValue),...(done?[]:['|','toca',siteKey(site)])]);
+    return;
+  }
+  if(r.cmd==='stop'){
+    $('parsed').textContent='Comando: terminar';
+    stopVoice();
+    if(T)say(['detenido']);
+    return;
+  }
+  if(r.cmd==='correct'){
+    $('parsed').textContent='Comando: corregir';
+    if(pos===0){if(T)say(['nada_corregir']);return;}
+    pos--;done=false;
+    const c=cur();data[c.round][c.site]=null;
+    const p=pos-1;lastValue=p>=0?data[Math.floor(p/N)][p%N]:null;
+    render();setUi();
+    if(T)say(['corregido','repite',siteKey(c.site)]);
+    return;
+  }
+  if(r.cmd==='skip'){
+    $('parsed').textContent='Comando: siguiente';
+    if(done)return;
+    pos++;
+    if(pos>=total()){
+      done=true;render();
+      if(voiceOn)stopVoice();
+      if(T)say(['completa']);
+      return;
+    }
+    render();const n=cur();
+    if(T)say(['saltado',...(n.round!==round?roundKeys(n.round+1):[]),'siguiente',siteKey(n.site)]);
+    return;
+  }
+  if(done){
+    $('parsed').textContent='La medición ya está completa. Toca un valor para corregirlo.';
+    if(T)say(['ya_completa']);
+    return;
+  }
+  const v=r.value;
+  if(v<1||v>80){
+    $('parsed').textContent=`${fmt(v)} fuera de rango`;
+    if(T)say([...numKeys(v),'fuera','repite',siteKey(site)]);
+    return;
+  }
+  if(!hasData())startedAt=new Date().toISOString();
+  data[round][site]=v;lastValue=v;pos++;
+  $('parsed').textContent=`Registrado: ${fmt(v)} mm · ${SITES[site]}, ronda ${round+1}`+(r.note?` (${r.note})`:'');
+  if(pos>=total()){
+    done=true;render();
+    if(voiceOn)stopVoice();
+    if(T)say([...numKeys(v),'|',siteKey(site),'registrado','completa']);
+  }else{
+    render();const n=cur();
+    if(T)say([...numKeys(v),'|',...(n.round!==round?roundKeys(n.round+1):[]),'siguiente',siteKey(n.site)]);
+  }
+}
+
+// ---- corregir una celda anterior (el cursor no se mueve)
+function commitCell(r,i,text){
+  const s=String(text).trim();
+  if(s===''){
+    if(data[r][i]!==null){data[r][i]=null;$('parsed').textContent=`Borrado: ${SITES[i]}, ronda ${r+1}`;}
+    render();return;
+  }
+  const v=parseTyped(s);
+  if(v===null){$('parsed').textContent='Valor no válido. Escribe por ejemplo 12.5';render();return;}
+  if(v<1||v>80){$('parsed').textContent=`${fmt(v)} fuera de rango`;render();return;}
+  if(!hasData())startedAt=new Date().toISOString();
+  const changed=data[r][i]!==v;
+  data[r][i]=v;lastValue=v;
+  $('parsed').textContent=`Corregido: ${fmt(v)} mm · ${SITES[i]}, ronda ${r+1}`;
+  render();
+  if(changed&&canTalk('typed')){
+    const n=cur();
+    say(['corregido',...roundKeys(r+1),siteKey(i),...numKeys(v),...(done?[]:['|','toca',siteKey(n.site)])]);
+  }
+}
+function startCellEdit(td,r,i){
+  if(editing)return;
+  editing=true;
+  pauseForTyping();
+  const inp=document.createElement('input');
+  inp.type='text';inp.setAttribute('inputmode','decimal');inp.className='cell';
+  inp.value=data[r][i]===null?'':fmt(data[r][i]);
+  td.textContent='';td.append(inp);
+  inp.focus();inp.select();
+  let finished=false;
+  const finish=commit=>{
+    if(finished)return;
+    finished=true;editing=false;
+    if(commit)commitCell(r,i,inp.value);else render();
+    resumeAfterTyping();
+  };
+  inp.onkeydown=e=>{
+    if(e.key==='Enter'){e.preventDefault();finish(true);}
+    else if(e.key==='Escape'){finish(false);}
+  };
+  inp.onblur=()=>finish(true);
+}
+
+// ---- exportar
+const pad2=n=>String(n).padStart(2,'0');
+const stamp=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+function tableRows(){
+  const comma=dec==='coma';
+  const f=v=>v===null?'':(comma?String(v).replace('.',','):String(v));
+  const when=startedAt?stamp(new Date(startedAt)):'';
+  const subject=$('subject').value.trim();
+  const head=['sujeto','pliegue',...Array.from({length:rounds},(_,i)=>'medida '+(i+1)),'fecha'];
+  const rows=SITES.map((s,i)=>[subject,s,...data.map(r=>f(r[i])),when]);
+  return[head,...rows];
+}
+function toDelimited(rows,sep){
+  const q=s=>new RegExp('["\\n'+sep+']').test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+  return rows.map(r=>r.map(q).join(sep)).join('\n');
+}
+function csvFile(){
+  const sep=dec==='coma'?';':',';
+  const slug=($('subject').value.trim()||'sin-nombre').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase()||'sin-nombre';
+  const when=stamp(startedAt?new Date(startedAt):new Date()).replace(' ','_').replace(':','');
+  return{name:`pliegues_${slug}_${when}.csv`,text:toDelimited(tableRows(),sep)};
+}
+function download(name,text){
+  const b=new Blob(['\ufeff'+text],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download=name;
+  document.body.append(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+// ---- eventos
+$('toggle').onclick=()=>{
+  msg('');
+  if(voiceOn){stopVoice();return;}
+  voiceOn=true;typingPause=false;introPending=true;setUi();
+  if(rec)startRec();
+  else{introPending=false;say(introKeys());}
+};
+$('reset').onclick=()=>{
+  if(!confirmWipe())return;
+  stopVoice();
+  $('subject').value='';resetAll();msg('');
+};
+$('rounds').onchange=e=>{
+  if(!confirmWipe()){e.target.value=String(rounds);return;}
+  rounds=parseInt(e.target.value,10);resetAll();
+};
+$('dec').onchange=e=>{dec=e.target.value;save();};
+$('subject').oninput=save;
+$('readtyped').onchange=save;
+$('voice').onchange=e=>{if(voices.length)voice=voices[parseInt(e.target.value,10)];};
+$('typed').oninput=()=>{
+  if($('typed').value!=='')pauseForTyping();
+  else resumeAfterTyping();
+};
+$('typed').onblur=()=>resumeAfterTyping();
+$('typedform').onsubmit=e=>{
+  e.preventDefault();
+  const v=$('typed').value;
+  if(!v.trim())return;
+  $('typed').value='';
+  submitTyped(v);
+  resumeAfterTyping();
+  $('typed').focus();
+};
+$('skip').onclick=()=>act({cmd:'skip'},'typed');
+$('download').onclick=()=>{const f=csvFile();download(f.name,f.text);};
+$('copy').onclick=async()=>{
+  const text=toDelimited(tableRows(),'\t');
+  try{await navigator.clipboard.writeText(text);}
+  catch(e){const ta=document.createElement('textarea');ta.value=text;document.body.append(ta);ta.select();document.execCommand('copy');ta.remove();}
+  $('copy').textContent='Copiado ✓';setTimeout(()=>$('copy').textContent='Copiar tabla',1500);
+};
+
+// ---- arranque (la voz sigue apagada: aquí no se pide el micrófono)
+if(!SR){$('unsupported').hidden=false;}
+else setupRec();
+if(window.speechSynthesis){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;}
+preloadClips();
+if(loadSaved()){
+  render();
+  if(hasData())$('parsed').textContent='Se recuperó la medición anterior.';
+}else resetAll();
+setUi();
+</script>
+</body>
+</html>
